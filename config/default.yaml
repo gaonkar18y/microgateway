@@ -19,6 +19,7 @@ edgemicro:
     stats_log_interval: 60
     rotate_interval: 24
     stack_trace: false
+    plugin_logger: false
   plugins:
     sequence:
       - oauth

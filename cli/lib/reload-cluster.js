@@ -9,6 +9,7 @@ const writeConsoleLog = require('microgateway-core').Logging.writeConsoleLog;
 const CONSOLE_LOG_TAG_COMP = 'microgateway reload cluster';
 
 const specialLists = require('./util/item-managers')
+const pluginLogger = require('./util/plugin-logger');
 
 const PURGE_INTERVAL = 60000;
 //
@@ -280,6 +281,7 @@ class ClusterManager extends EventEmitter {
     this.opt.args = opt.args || [];
     this.opt.log = opt.log || {respawns: true};
     this.opt.logger = opt.logger;
+    this.opt.plugin_logger = opt.plugin_logger;
   }
 
   // --initializeCache--------------------------------------- 
@@ -542,7 +544,13 @@ class ClusterManager extends EventEmitter {
       // whenever worker sends a message, emit it to the channels
       worker.on('message', (message) => {
         if ( this.opt.logger ) {
-          this.opt.logger.writeLogRecord(message);
+          if(message && typeof message === 'object' && message.isPluginLog){
+            if ( this.opt.plugin_logger === true ) {
+              pluginLogger.writePluginLogToFile(message.data,message.pluginName,worker.id);
+            }
+          } else {
+            this.opt.logger.writeLogRecord(message);
+          }
         }
         this.emit('message', worker, message);
       });

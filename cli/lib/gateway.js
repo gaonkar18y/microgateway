@@ -126,6 +126,7 @@ Gateway.prototype.start = (options,cb) => {
         if (options.processes) {
             opt.workers = Number(options.processes);
         }
+        opt.plugin_logger = config.edgemicro.logging.plugin_logger;
 
         var mgCluster = reloadCluster(path.join(__dirname, 'start-agent.js'), opt);
 
