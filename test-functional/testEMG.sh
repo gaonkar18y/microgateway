@@ -47,7 +47,7 @@ function installEMG() {
 function checkEMGVersion() {
 
   local result=0
-
+  $EDGEMICRO --version
   $EDGEMICRO --version > emgVersion.txt
   result=$?
 
