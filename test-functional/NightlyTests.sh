@@ -36,10 +36,10 @@ LOCAL_REPOSITORY_TESTING=''
 #bash
 if [ -z "$1" ]
 then
-    EDGEMICRO=$(which edgemicro || echo edgemicro)
+     EDGEMICRO="node ../cli/edgemicro"
+     LOCAL_REPOSITORY_TESTING=$(pwd)  
 else
-    EDGEMICRO="node ../cli/edgemicro"
-    LOCAL_REPOSITORY_TESTING=$(pwd)
+     EDGEMICRO=$(which edgemicro || echo edgemicro)
 fi
 echo $EDGEMICRO
 
