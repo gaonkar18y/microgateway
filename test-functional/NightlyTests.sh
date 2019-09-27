@@ -313,6 +313,8 @@ main() {
        testFailCount=`expr $testFailCount + 1`
   fi
 
+  echo $EDGEMICRO
+
   echo
   testCount=`expr $testCount + 1`
   echo "$testCount) initEMG"
