@@ -55,8 +55,7 @@ Gateway.prototype.start = (options,cb) => {
 
     const source = configLocations.getSourcePath(options.org, options.env, options.configDir);
     const cache = configLocations.getCachePath(options.org, options.env, options.configDir);
-    const configurl = options.configUrl;   
-    
+
     const keys = {
         key: options.key,
         secret: options.secret
@@ -85,164 +84,196 @@ Gateway.prototype.start = (options,cb) => {
 
     edgeconfig.get(configOptions, (err, config) => {
         if (err) {
-            const exists = fs.existsSync(cache);
             writeConsoleLog('error',{component: CONSOLE_LOG_TAG_COMP},"failed to retieve config from gateway. continuing, will try cached copy..");
             writeConsoleLog('error',{component: CONSOLE_LOG_TAG_COMP},err);
-            if (!exists) {
-                writeConsoleLog('error',{component: CONSOLE_LOG_TAG_COMP},'cache configuration ' + cache + ' does not exist. exiting.');
-                return;
-            } else {
-                writeConsoleLog('log',{component: CONSOLE_LOG_TAG_COMP},'using cached configuration from %s', cache);
-                config = edgeconfig.load({
-                    source: cache
+            let sourceconfig = edgeconfig.load({
+                source: configOptions.source
+            });
+            if ( sourceconfig.edgemicro.useRemoteCache === true ) {
+                edgeconfig.getRemoteCacheConfig(sourceconfig, configOptions,function(err, config){
+                    if ( err ) {
+                        config = getCachedConfigFile(cache);
+                    } else {
+                        writeConsoleLog('log',{component: CONSOLE_LOG_TAG_COMP},'using remote cached configuration from %s', sourceconfig.edgemicro.redisHost);
+                        if (options.port) {
+                            config.edgemicro.port = parseInt(options.port);
+                        }
+                    }
+                    var mergedConfig = _.merge({}, config, sourceconfig); // overiding by local yaml config
+                    startEMG(mergedConfig,options, args, cache, configOptions, cb);
                 });
-                if (options.port) {
-                    config.edgemicro.port = parseInt(options.port);
-                }
+            } else {
+                config = getCachedConfigFile(cache);
             }
         } else {
             if (options.port) {
                 config.edgemicro.port = parseInt(options.port);
             }
             edgeconfig.save(config, cache);
-        }
-
-        config.uid = uuid();
-        initializeMicroGatewayLogging(config,options);
-
-        var opt = {};
-        delete args.keys;
-        //set pluginDir
-        if (!args.pluginDir) {
-            if (config.edgemicro.plugins.dir) {
-                args.pluginDir = path.resolve(config.edgemicro.plugins.dir);
+            if ( config.edgemicro.cacheSynchornizer === true ) {
+                writeConsoleLog('log',{component: CONSOLE_LOG_TAG_COMP},'Saving cache to remote host: %s', config.edgemicro.redisHost);
+                edgeconfig.saveRemoteCacheConfig(config, configOptions);
             }
-        }
-        opt.args = [JSON.stringify(args)];
-        opt.timeout = 10;
-        opt.logger = gateway.Logging.getLogger();
-
-        //Let reload cluster know how many processes to use if the user doesn't want the default
-        if (options.processes) {
-            opt.workers = Number(options.processes);
-        }
-
-        var mgCluster = reloadCluster(path.join(__dirname, 'start-agent.js'), opt);
-
-        var server = net.createServer();
-        server.listen(ipcPath);
-
-        server.on('connection', (socket) => {
-            //enable TCP_NODELAY
-            if (config.edgemicro.nodelay === true) {
-              debug("tcp nodelay set");
-              socket.setNoDelay(true);
-            }
-            socket = new JsonSocket(socket);
-            socket.on('message', (message) => {
-                if (message.command === 'reload') {
-                    writeConsoleLog('log',{component: CONSOLE_LOG_TAG_COMP},'Received reload instruction. Proceeding to reload');
-                    mgCluster.reload((msg) => {
-                        if ( typeof msg === 'string') {
-                            writeConsoleLog('log',{component: CONSOLE_LOG_TAG_COMP},msg);
-                            socket.sendMessage({ 'reloaded' : false, 'message' : msg });
-                        } else {
-                            socket.sendMessage(true);
-                            writeConsoleLog('log',{component: CONSOLE_LOG_TAG_COMP},'Reload completed');
-                        }
-                    });
-                } else if (message.command === 'stop') {
-                    writeConsoleLog('log',{component: CONSOLE_LOG_TAG_COMP},'Recieved stop instruction. Proceeding to stop');
-                    mgCluster.terminate(() => {
-                        writeConsoleLog('log',{component: CONSOLE_LOG_TAG_COMP},'Stop completed');
-                        socket.sendMessage(true);
-                        process.exit(0);
-                    });
-                } else if (message.command === 'status') {
-			socket.sendMessage(mgCluster.countTracked());
-                }
-            });
-        });
-
-        mgCluster.run();
-        writeConsoleLog('log',{component: CONSOLE_LOG_TAG_COMP},'PROCESS PID : ' + process.pid);
-        fs.appendFileSync(pidPath, process.pid);
-
-        process.on('exit', () => {
-            if (!isWin) {
-                writeConsoleLog('log',{component: CONSOLE_LOG_TAG_COMP},'Removing the socket file as part of cleanup');
-                fs.unlinkSync(ipcPath);
-            }
-			fs.unlinkSync(pidPath);
-        });
-
-        process.on('SIGTERM', () => {
-            process.exit(0);
-        });
-
-        process.on('SIGINT', () => {
-            process.exit(0);
-        });
-
-        process.on('uncaughtException',(err) => {
-            writeConsoleLog('error',{component: CONSOLE_LOG_TAG_COMP},err);
-            debug('Caught Unhandled Exception:');
-            debug(err);
-            process.exit(0);
-        });
-
-        var shouldNotPoll = config.edgemicro.disable_config_poll_interval || false;
-        var pollInterval = config.edgemicro.config_change_poll_interval || defaultPollInterval;
-        // Client Socket for auto reload
-        // send reload message to socket.
-        var clientSocket = new JsonSocket(new net.Socket()); //Decorate a standard net.Socket with JsonSocket
-        clientSocket.connect(ipcPath);
-
-        //start the polling mechanism to look for config changes
-        var reloadOnConfigChange = (oldConfig, cache, opts) => {
-            writeConsoleLog('log',{component: CONSOLE_LOG_TAG_COMP},'Checking for change in configuration');
-            if (configurl) opts.configurl = configurl;
-            //var self = this;
-            edgeconfig.get(opts, (err, newConfig) => {
-                if(validator(newConfig) === false && !err) {
-                    err = {};
-                }
-                if (err) {
-                    // failed to check new config. so try to check again after pollInterval
-                    writeConsoleLog('error',{component: CONSOLE_LOG_TAG_COMP},'Failed to check for change in Config. Will retry after ' + pollInterval + ' seconds');
-                    setTimeout(() => {
-                        reloadOnConfigChange(oldConfig, cache, opts);
-                    }, pollInterval * 1000);
-                } else {
-                    pollInterval = config.edgemicro.config_change_poll_interval ? config.edgemicro.config_change_poll_interval : pollInterval;
-                    var isConfigChanged = hasConfigChanged(oldConfig, newConfig);
-                    if (isConfigChanged) {
-                        writeConsoleLog('log',{component: CONSOLE_LOG_TAG_COMP},'Configuration change detected. Saving new config and Initiating reload');
-                        edgeconfig.save(newConfig, cache);
-                        clientSocket.sendMessage({
-                            command: 'reload'
-                        });
-                    }
-                    setTimeout(() => {
-                        reloadOnConfigChange(newConfig, cache, opts);
-                    }, pollInterval * 1000);
-                }
-            });
-        };
-
-        if (!shouldNotPoll) {
-            setTimeout(() => {
-                reloadOnConfigChange(config, cache, configOptions);
-            }, pollInterval * 1000);
-        }
-        
-        if ( cb && (typeof cb === "function") ) {
-	    writeConsoleLog('log',{component: CONSOLE_LOG_TAG_COMP},"Calling cb")
-            cb();
-        }
-        
+            startEMG(config, options, args, cache, configOptions, cb);
+        }        
     });
 };
+
+function getCachedConfigFile(cache){
+    const exists = fs.existsSync(cache);
+    if (!exists) {
+        writeConsoleLog('error',{component: CONSOLE_LOG_TAG_COMP},'cache configuration ' + cache + ' does not exist. exiting.');
+        return;
+    } else {
+        writeConsoleLog('log',{component: CONSOLE_LOG_TAG_COMP},'using cached configuration from %s', cache);
+        let config = edgeconfig.load({
+            source: cache
+        });
+        if (options.port) {
+            config.edgemicro.port = parseInt(options.port);
+        }
+        return config;
+    }
+}
+
+function startEMG(config, options, args, cache, configOptions, cb){
+
+    const configurl = options.configUrl;   
+    
+    config.uid = uuid();
+    initializeMicroGatewayLogging(config,options);
+
+    var opt = {};
+    delete args.keys;
+    //set pluginDir
+    if (!args.pluginDir) {
+        if (config.edgemicro.plugins.dir) {
+            args.pluginDir = path.resolve(config.edgemicro.plugins.dir);
+        }
+    }
+    opt.args = [JSON.stringify(args)];
+    opt.timeout = 10;
+    opt.logger = gateway.Logging.getLogger();
+
+    //Let reload cluster know how many processes to use if the user doesn't want the default
+    if (options.processes) {
+        opt.workers = Number(options.processes);
+    }
+
+    var mgCluster = reloadCluster(path.join(__dirname, 'start-agent.js'), opt);
+
+    var server = net.createServer();
+    server.listen(ipcPath);
+
+    server.on('connection', (socket) => {
+        //enable TCP_NODELAY
+        if (config.edgemicro.nodelay === true) {
+          debug("tcp nodelay set");
+          socket.setNoDelay(true);
+        }
+        socket = new JsonSocket(socket);
+        socket.on('message', (message) => {
+            if (message.command === 'reload') {
+                writeConsoleLog('log',{component: CONSOLE_LOG_TAG_COMP},'Received reload instruction. Proceeding to reload');
+                mgCluster.reload((msg) => {
+                    if ( typeof msg === 'string') {
+                        writeConsoleLog('log',{component: CONSOLE_LOG_TAG_COMP},msg);
+                        socket.sendMessage({ 'reloaded' : false, 'message' : msg });
+                    } else {
+                        socket.sendMessage(true);
+                        writeConsoleLog('log',{component: CONSOLE_LOG_TAG_COMP},'Reload completed');
+                    }
+                });
+            } else if (message.command === 'stop') {
+                writeConsoleLog('log',{component: CONSOLE_LOG_TAG_COMP},'Recieved stop instruction. Proceeding to stop');
+                mgCluster.terminate(() => {
+                    writeConsoleLog('log',{component: CONSOLE_LOG_TAG_COMP},'Stop completed');
+                    socket.sendMessage(true);
+                    process.exit(0);
+                });
+            } else if (message.command === 'status') {
+        socket.sendMessage(mgCluster.countTracked());
+            }
+        });
+    });
+
+    mgCluster.run();
+    writeConsoleLog('log',{component: CONSOLE_LOG_TAG_COMP},'PROCESS PID : ' + process.pid);
+    fs.appendFileSync(pidPath, process.pid);
+
+    process.on('exit', () => {
+        if (!isWin) {
+            writeConsoleLog('log',{component: CONSOLE_LOG_TAG_COMP},'Removing the socket file as part of cleanup');
+            fs.unlinkSync(ipcPath);
+        }
+        fs.unlinkSync(pidPath);
+    });
+
+    process.on('SIGTERM', () => {
+        process.exit(0);
+    });
+
+    process.on('SIGINT', () => {
+        process.exit(0);
+    });
+
+    process.on('uncaughtException',(err) => {
+        writeConsoleLog('error',{component: CONSOLE_LOG_TAG_COMP},err);
+        debug('Caught Unhandled Exception:');
+        debug(err);
+        process.exit(0);
+    });
+
+    var shouldNotPoll = config.edgemicro.disable_config_poll_interval || false;
+    var pollInterval = config.edgemicro.config_change_poll_interval || defaultPollInterval;
+    // Client Socket for auto reload
+    // send reload message to socket.
+    var clientSocket = new JsonSocket(new net.Socket()); //Decorate a standard net.Socket with JsonSocket
+    clientSocket.connect(ipcPath);
+
+    //start the polling mechanism to look for config changes
+    var reloadOnConfigChange = (oldConfig, cache, opts) => {
+        writeConsoleLog('log',{component: CONSOLE_LOG_TAG_COMP},'Checking for change in configuration');
+        if (configurl) opts.configurl = configurl;
+        //var self = this;
+        edgeconfig.get(opts, (err, newConfig) => {
+            if(validator(newConfig) === false && !err) {
+                err = {};
+            }
+            if (err) {
+                // failed to check new config. so try to check again after pollInterval
+                writeConsoleLog('error',{component: CONSOLE_LOG_TAG_COMP},'Failed to check for change in Config. Will retry after ' + pollInterval + ' seconds');
+                setTimeout(() => {
+                    reloadOnConfigChange(oldConfig, cache, opts);
+                }, pollInterval * 1000);
+            } else {
+                pollInterval = config.edgemicro.config_change_poll_interval ? config.edgemicro.config_change_poll_interval : pollInterval;
+                var isConfigChanged = hasConfigChanged(oldConfig, newConfig);
+                if (isConfigChanged) {
+                    writeConsoleLog('log',{component: CONSOLE_LOG_TAG_COMP},'Configuration change detected. Saving new config and Initiating reload');
+                    edgeconfig.save(newConfig, cache);
+                    clientSocket.sendMessage({
+                        command: 'reload'
+                    });
+                }
+                setTimeout(() => {
+                    reloadOnConfigChange(newConfig, cache, opts);
+                }, pollInterval * 1000);
+            }
+        });
+    };
+
+    if (!shouldNotPoll) {
+        setTimeout(() => {
+            reloadOnConfigChange(config, cache, configOptions);
+        }, pollInterval * 1000);
+    }
+    
+    if ( cb && (typeof cb === "function") ) {
+    writeConsoleLog('log',{component: CONSOLE_LOG_TAG_COMP},"Calling cb")
+        cb();
+    }
+}
 
 Gateway.prototype.reload = (options) => {
 
