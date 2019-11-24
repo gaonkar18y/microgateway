@@ -16,8 +16,8 @@ const DEFAULT_PROCESS_CHECK_INTERVAL = 10000
 const RAPID_REPLAY_INTERVAL_STOPPED_PROCESSES = 50
 const CALLBACK_TIMEOUT = 5000
 const MAX_CONNECT_FAIL_TIME = 200
-
-
+const WORKER_CHECKSTATUS_INTERVAL = 100
+const WORKER_FORCEKILL_TIMEOUT = 1000 * 180 // 3 mins
 //
 var RLC = null;  // an instance if needed
 var gExitCounter = null;
@@ -38,6 +38,7 @@ class WorkerInfo {
     this.trackingStartTime = Date.now()
     this.worker_key = worker.id
     this.address = ''
+    this.shouldReload = false;
   }
   // --connectTimeout--------------------------------------- 
   // Check if more time has gone by for connecting than we can tolerate 
@@ -69,6 +70,7 @@ var gStoppedProcCallbacks = new CallbackList();
 // keeping these as global variables.
 var tClosers = {}
 var tTracked = {}
+var replacementMap = {}; // to be used in reload functionality.
 // ---- ---- ---- ---- ---- ---- ----
 
 
@@ -208,7 +210,7 @@ function workersFullHouse(rlc) {
       workersFullHouse(rlc)
     },rlc.numWorker)
   } else {
-    while ( wantsmore ) {
+    while ( wantsmore > 0 ) { // wantsmore should be always > 0, otherwise while loop goes to infinite.
       //console.log(wantsmore)
       rlc.requestNewWorker()
       wantsmore--;
@@ -242,7 +244,7 @@ class ClusterManager extends EventEmitter {
     this.numWorkers = opt.workers
     this.optionDefaults(opt)
     //
-    this.readyEvent = 'online'
+    this.readyEvent = 'listening'
     this.reloading = false
     this.callbackTO = null  // callback timeout
     this.shuttingdown = false 
@@ -405,17 +407,19 @@ class ClusterManager extends EventEmitter {
   // when enough time has gone by that the client deserves a response
   finallyReloadCallback() {
     this.callabackTO = gExtantTimers.remove(this.callabackTO)
-    if ( this.readyCb !== undefined ) {
+    if ( this.readyCb !== undefined && !this.getNextToBeReloaded()) {
       this.readyCb();
+      this.readyCb = undefined
     }
-    this.readyCb = undefined
   }
 
   // --beginProcessStabilization--------------------------------------- 
   beginProcessStabilization() {
     setImmediate(() => {  // at the next chance clear out processes being stopped.
       clearOutStoppedProcesses(() => { 
-        this.reloading = false; 
+        if ( !this.getNextToBeReloaded() ){
+          this.reloading = false; 
+        }
       })
     })
   }
@@ -451,6 +455,13 @@ class ClusterManager extends EventEmitter {
   // Set the process state for ready when it achieves the applications 
   // definition of readiness
   handleReadyEvent(w) {
+    if ( replacementMap[w.id] ) {
+      let wk = replacementMap[w.id];
+      tClosers[wk] = tTracked[wk]  // move old worker to tClosers, this is to be killed.
+      this.opt.logger.info(`Replaced worker : ${wk} by worker : ${w.id}`);
+      delete tTracked[wk];
+      delete replacementMap[w.id];
+    }
     if ( this.reloading ) {
       this.handleReloadReadyEvents(w)
     }
@@ -530,14 +541,17 @@ class ClusterManager extends EventEmitter {
   
   
   // --doFork----------------------------------------------------
-  doFork() {
+  doFork(replacerId) {
     //
     var nW = this.numWorkers  
-    if ( Object.keys(tTracked).length < nW ) {
+    if ( Object.keys(tTracked).length <= nW ) { // allow max n+1 workers
       //
       var worker = cluster.fork() //{WORKER_ID: wid});
       //
       tTracked[worker.id] = new WorkerInfo(worker)
+      if (replacerId) {
+        replacementMap[worker.id] = replacerId; // save old worker id, old worker needs to be killed when new one is ready.
+      }
       //
       // whenever worker sends a message, emit it to the channels
       worker.on('message', (message) => {
@@ -589,16 +603,79 @@ class ClusterManager extends EventEmitter {
       this.reloading = true // reloading is not reset until new processes are running and a sufficient number of stopped child processes are gone
       //
       this.refreshCache()
-      untrackTrackedProcesses()
       //
       this.readyCb = () => {
         // the callback will defer the cb call until it is determined that the new processes are ready
         cb()
       }
-      //
-      // fork workers
-      this.forkWorkers()
+
+      // set the existing workers for reload
+      Object.keys(tTracked).forEach( wkid => {
+        var w_info = tTracked[wkid];
+        w_info.shouldReload = true;
+      });
+      this.opt.logger.info(`Started reloading at : ${new Date().toISOString()}`);
+      let totalWorkersToReload =  Object.keys(tTracked).length;
+      this.processReloading(totalWorkersToReload);
     }
+  }
+  getNextToBeReloaded(){
+    return Object.keys(tTracked).find( wkid => {
+      var w_info = tTracked[wkid];
+      return w_info.shouldReload == true;
+    });
+  }
+  getToBeReloadedCount(){
+    return Object.keys(tTracked).filter( wkid => {
+      var w_info = tTracked[wkid];
+      return w_info.shouldReload == true;
+    }).length;
+  }
+  processReloading(LoopCount){
+
+    let tobeReloaded = this.getNextToBeReloaded();
+    if ( !tobeReloaded ) {
+      this.reloading = false;
+      this.opt.logger.info(`Finished reloading at : ${new Date().toISOString()}, total workers: ${Object.keys(cluster.workers)}`);
+      return;
+    }
+
+    LoopCount--;
+    if ( LoopCount < 0 ) { // to handle infinite recursion, ideally should not occur.
+      this.opt.logger.info(`reloading crossed max loop count, stopping the reload process to avoid infinite recursion. 
+      current workers : ${Object.keys(cluster.workers)}`);
+       // continue with existing workers
+       Object.keys(tTracked).forEach( wkid => {
+        var w_info = tTracked[wkid];
+        w_info.shouldReload = false;
+      });
+      this.finallyReloadCallback()
+      return;
+    }
+    
+    this.doFork(tobeReloaded);
+    cullProcesses(); // kill workers in tClosers
+    this.opt.logger.info(`reloading WIP, current workers : ${Object.keys(cluster.workers)}`);
+    let maxTimeToCheck = Date.now() + WORKER_FORCEKILL_TIMEOUT;
+    let tempInterval = setInterval(()=> {
+    this.opt.logger.info(`reloading WIP, current workers : ${Object.keys(cluster.workers)}`);
+      cullProcesses(); // kill workers in tClosers
+      if ( Object.keys(tClosers).length === 0 && this.getToBeReloadedCount() === LoopCount) { // old worker successfully killed and
+        clearInterval(tempInterval);
+        this.processReloading(LoopCount);
+      } else if( Date.now() > maxTimeToCheck ) {
+        this.opt.logger.warn(`Unable to kill worker gracefully : ${ tobeReloaded } , Killing forcefully`);
+        if ( cluster.workers[tobeReloaded] ) {
+          cluster.workers[tobeReloaded].process.kill();
+        }
+        if ( tClosers[tobeReloaded] ) {
+          delete tClosers[tobeReloaded];
+        }
+        clearInterval(tempInterval);
+        this.processReloading(LoopCount);
+      }
+    }, WORKER_CHECKSTATUS_INTERVAL );
+    
   }
 
   // -----terminate--------------------------------------------------
