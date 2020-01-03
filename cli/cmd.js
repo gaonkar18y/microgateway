@@ -510,6 +510,7 @@ const setup = function setup() {
         .option('-t, --token <token>', 'OAuth token to use with management API')
         .option('-v, --virtualhost <virtualhost>', 'virtual host of the proxy')
         .option('-b, --baseuri <baseuri>', 'baseuri for management apis')
+        .option('-d, --custompath <custompath>', 'custompath for custom policies xml files')
         .description('upgrade edgemicro-auth proxy')
         .action((options) => {
             options.error = optionError(options);
