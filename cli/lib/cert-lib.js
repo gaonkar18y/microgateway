@@ -154,7 +154,7 @@ CertLogic.prototype.installPrivateCert = function(options, callback) {
 }
 
 CertLogic.prototype.installCertWithPassword = function(options, callback) {
-    const managementUri = this.managementUri;
+    const managementUri = options.mgmtUrl || this.managementUri;
     const vaultName = this.vaultName;
     var privateKey;
     var publicKey;
