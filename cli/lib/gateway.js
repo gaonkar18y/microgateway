@@ -16,6 +16,8 @@ const debug = require('debug')('microgateway');
 const jsdiff = require('diff');
 const _ = require('lodash');
 //const os = require('os');
+const { exec } = require('child_process');
+
 const writeConsoleLog = require('microgateway-core').Logging.writeConsoleLog;
 edgeconfig.setConsoleLogger(writeConsoleLog);
 const Gateway = function() {};
@@ -246,6 +248,51 @@ Gateway.prototype.start = (options,cb) => {
     };
 
     const sourceConfig = edgeconfig.load(configOptions);
+
+    if ( options.envoy === 'Y' || options.envoy === 'y') {
+      
+
+        if( !fs.existsSync(configLocations.getEnvoyPath())) {
+
+            // install envoy in the edgemicro dir
+            exec('curl -L https://getenvoy.io/cli | bash -s -- -b ~/.edgemicro', (err, stdout, stderr) => {
+                if (err) {
+                    console.error(err)
+                } else {
+                    console.log(`stdout: ${stdout}`);
+                    console.log(`stderr: ${stderr}`);
+                }
+            });
+        }
+        
+
+        const envoyDestination = configLocations.getEnvoyConfigPath();
+        const envoyConfOptions = {
+            source: envoyDestination,
+        };
+        
+        // copy envoy config file to edgemicro dir if not already exist
+        if( !fs.existsSync(envoyDestination)) {
+            fs.copyFile(configLocations.getEnvoyInitPath(), envoyDestination, (err) => {
+                if ( err )  writeConsoleLog('log',{component: CONSOLE_LOG_TAG_COMP},"failed to copy envoy config file %s", err);
+            }); 
+        }
+
+        const envoyConfig = edgeconfig.load(envoyConfOptions);
+
+        // assign emg port to envoy
+        envoyConfig.static_resources.listeners[0].address.socket_address.port_value = sourceConfig.edgemicro.port;
+        edgeconfig.save(envoyConfig, envoyDestination);
+
+        exec('getenvoy run standard:1.11.1 -- --config-path ~/.edgemicro/emg-envoy-proxy.yaml', (err, stdout, stderr) => {
+            if (err) {
+                console.error(err)
+            } else {
+                console.log(`stdout: ${stdout}`);
+                console.log(`stderr: ${stderr}`);
+            }
+        });
+    }
     
     if(sourceConfig.edge_config.synchronizerMode === START_SYNCHRONIZER) { 
         edgeconfig.get(configOptions, startSynchronizer);

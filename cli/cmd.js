@@ -143,6 +143,7 @@ const setup = function setup() {
         .option('-v, --revision <revision>', 'api proxy revision; required if apiProxyName is set')
         .option('-b, --basepath <basepath>', 'api proxy basePath; required if apiProxyName is set')
         .option('-t, --target <target>', 'target endpoint for proxy; required if apiProxyName is set')
+        .option('-y, --envoy <envoy>', 'start emg with envoy')
         .description('start the gateway based on configuration')
         .action((options) => {
             options.error = optionError(options);
