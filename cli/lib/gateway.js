@@ -261,10 +261,26 @@ Gateway.prototype.start = (options,cb) => {
     };
 
     const sourceConfig = edgeconfig.load(configOptions);
+    
+    const startEmgProcess = () => {
+        if(sourceConfig.edge_config.synchronizerMode === START_SYNCHRONIZER) { 
+            edgeconfig.get(configOptions, startSynchronizer);
+            setInterval(()=>{
+                edgeconfig.get(configOptions, startSynchronizer)
+            },sourceConfig.edgemicro.config_change_poll_interval * 1000);
+        }else if(sourceConfig.edge_config.synchronizerMode === START_SYNCHRONIZER_AND_EMG){
+            edgeconfig.get(configOptions, startGateway);
+        }else{
+            // This is for the case 0.
+            // There could be a possibility of this being handled differently later, 
+            // so we have created a separate case for a later TODO if needed
+            edgeconfig.get(configOptions, startGateway);
+        }
+    }
 
 
     const runEnvoyProxy = () => {
-        exec('~/.edgemicro/getenvoy run standard:1.11.1 -- --config-path ~/.edgemicro/emg-envoy-proxy.yaml &', (err, stdout, stderr) => {
+        exec('./getenvoy run standard:1.11.1 -- --config-path ~/.edgemicro/emg-envoy-proxy.yaml &', (err, stdout, stderr) => {
             if (err) {
                 writeConsoleLog('error',{component: CONSOLE_LOG_TAG_COMP},'error in starting envoy',err);
             } else {
@@ -315,26 +331,11 @@ Gateway.prototype.start = (options,cb) => {
         }
     }
 
-    const startEmgProcess = () => {
-        if(sourceConfig.edge_config.synchronizerMode === START_SYNCHRONIZER) { 
-            edgeconfig.get(configOptions, startSynchronizer);
-            setInterval(()=>{
-                edgeconfig.get(configOptions, startSynchronizer)
-            },sourceConfig.edgemicro.config_change_poll_interval * 1000);
-        }else if(sourceConfig.edge_config.synchronizerMode === START_SYNCHRONIZER_AND_EMG){
-            edgeconfig.get(configOptions, startGateway);
-        }else{
-            // This is for the case 0.
-            // There could be a possibility of this being handled differently later, 
-            // so we have created a separate case for a later TODO if needed
-            edgeconfig.get(configOptions, startGateway);
-        }
-    }
-
+   
     if(options.envoy && options.envoy === 'yes') {   
-        if( !fs.existsSync(configLocations.getEnvoyPath())) {
+        if( !fs.existsSync('./getenvoy')) {
             // install envoy in the edgemicro dir
-            exec('curl -L https://getenvoy.io/cli | bash -s -- -b ~/.edgemicro', (err, stdout, stderr) => {
+            exec('curl -L https://getenvoy.io/cli | bash -s -- -b .', (err, stdout, stderr) => {
                 if (err) {
                     writeConsoleLog('error',{component: CONSOLE_LOG_TAG_COMP},'error in downloading envoy',err);
                 } else {
