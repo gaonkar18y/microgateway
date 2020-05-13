@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <APIProxy revision="2" name="edgemicro_proxy">
-    <Basepaths>/v1/hellojson</Basepaths>
+    <Basepaths>BASEPATH</Basepaths>
     <ConfigurationVersion majorVersion="4" minorVersion="0"/>
     <CreatedAt>1558418711038</CreatedAt>
     <CreatedBy>dkoroth@google.com</CreatedBy>

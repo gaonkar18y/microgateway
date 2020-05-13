@@ -482,6 +482,7 @@ function createAPIProxyBundle() {
     mv apiproxy/proxies/default.xml apiproxy/proxies/default.temp.xml
     mv apiproxy/targets/default.xml apiproxy/targets/default.temp.xml
     sed "s,${proxyPrefix},${apiProxyName},g" apiproxy/$apiProxyName.temp.xml > apiproxy/$apiProxyName.xml
+    sed "s,BASEPATH,${apiProxyBasePath},g" apiproxy/$apiProxyName.temp.xml > apiproxy/$apiProxyName.xml
     sed "s,${proxyPrefix},${apiProxyName},g" apiproxy/proxies/default.temp.xml > apiproxy/proxies/default.xml
     sed "s,TARGET_URL,${proxyTargetUrl},g" apiproxy/targets/default.temp.xml > apiproxy/targets/default.xml
     rm -f apiproxy/$apiProxyName.temp.xml
