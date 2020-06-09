@@ -16,6 +16,12 @@ const debug = require('debug')('microgateway');
 const jsdiff = require('diff');
 const _ = require('lodash');
 //const os = require('os');
+
+if ( process.env.EMG_HEAPDUMP_MODE && !process.env.PROD ) {
+    require('../../tests/heapdump_test').masterHeapDump();
+}
+
+
 const writeConsoleLog = require('microgateway-core').Logging.writeConsoleLog;
 edgeconfig.setConsoleLogger(writeConsoleLog);
 const Gateway = function() {};
@@ -243,6 +249,8 @@ Gateway.prototype.start = (options,cb) => {
             writeConsoleLog('log', { component: CONSOLE_LOG_TAG_COMP }, "Calling cb");
             cb();
         }
+      
+
     };
 
     const sourceConfig = edgeconfig.load(configOptions);
