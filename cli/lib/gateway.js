@@ -239,19 +239,20 @@ Gateway.prototype.start = (options,cb) => {
                 }
                 else {
                     pollInterval = config.edgemicro.config_change_poll_interval ? config.edgemicro.config_change_poll_interval : pollInterval;
-                    var isConfigChanged = hasConfigChanged(oldConfig,  edgeconfig.replaceEnvTags(newConfig, { disableLogs: true  }));
+                    const newConfigEnvReplaced = edgeconfig.replaceEnvTags(newConfig, { disableLogs: true  });
+                    var isConfigChanged = hasConfigChanged(oldConfig,  newConfigEnvReplaced);
                     if (isConfigChanged) {
                         writeConsoleLog('log', { component: CONSOLE_LOG_TAG_COMP }, 'Configuration change detected. Saving new config and Initiating reload');
                         edgeconfig.save(newConfig, cache);
                         if ( adminServer ) {
-                            adminServer.setCacheConfig(newConfig);
+                            adminServer.setCacheConfig(newConfigEnvReplaced);
                         }
                         clientSocket.sendMessage({
                             command: 'reload'
                         });
                     }
                     setTimeout(() => {
-                        reloadOnConfigChange(newConfig, cache, opts);
+                        reloadOnConfigChange(newConfigEnvReplaced, cache, opts);
                     }, pollInterval * 1000);
                 }
             });
