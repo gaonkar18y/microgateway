@@ -4702,9 +4702,8 @@
       }
     },
     "microgateway-config": {
-      "version": "3.1.6",
-      "resolved": "https://registry.npmjs.org/microgateway-config/-/microgateway-config-3.1.6.tgz",
-      "integrity": "sha512-IzYsw/5gDo18Y2XHkZ1aTdC5G4EZH+3FXDhO7C1Vl/KrWJVqB+XmVoNX0RS+f4hVyJcIpYB9apLL3FEnkZSj0Q==",
+      "version": "github:gaonkar18y/microgateway-config#a2a8c9bbe87f6bef3e3632484c2edd2b2260f0ab",
+      "from": "github:gaonkar18y/microgateway-config#for318-unit-tests",
       "requires": {
         "apigeetool": "^0.14.2",
         "async": "^1.5.2",
@@ -8062,9 +8061,8 @@
       }
     },
     "microgateway-core": {
-      "version": "3.1.8",
-      "resolved": "https://registry.npmjs.org/microgateway-core/-/microgateway-core-3.1.8.tgz",
-      "integrity": "sha512-snbcIzuiF1ftvraFQpgsxhF9rX7Rze8pK5Rx1K0K3ibiQ4FBrJ7vmwe5TI2dyqB9EIa7Pf3FZdN8QNb9F5Va8w==",
+      "version": "github:gaonkar18y/microgateway-core#712a6205c567de5cd1f0a93a9d7b3d6d3889cb99",
+      "from": "github:gaonkar18y/microgateway-core#for318-unit-tests",
       "requires": {
         "async": "~1.5.2",
         "debug": "~3.1.0",
@@ -15412,14 +15410,12 @@
       }
     },
     "microgateway-edgeauth": {
-      "version": "3.1.1",
-      "resolved": "https://registry.npmjs.org/microgateway-edgeauth/-/microgateway-edgeauth-3.1.1.tgz",
-      "integrity": "sha512-wBzXStr6XZtr9BXVk6LCno4tMtK5eQPKHPnID4mC6T3pmIouJJW8HkCVAwSpV8N4nDmxgBim83inLkAR8ML6Vw=="
+      "version": "github:gaonkar18y/microgateway-edgeauth#0044df48b443e5808364055e699cac2735b61d9e",
+      "from": "github:gaonkar18y/microgateway-edgeauth#for318-unit-tests"
     },
     "microgateway-plugins": {
-      "version": "3.1.2",
-      "resolved": "https://registry.npmjs.org/microgateway-plugins/-/microgateway-plugins-3.1.2.tgz",
-      "integrity": "sha512-YLu1GKjTf5Mlg1d4j37HiQ4+e2RsnROx/jFh8o40aeuRpy/5T5xfTXLAg/28oJOgIDEc2lzkjJyUkEv0Hy6J8w==",
+      "version": "github:gaonkar18y/microgateway-plugins#2e3ea9a2a637f40c9a8d39110a4202bd4f09429e",
+      "from": "github:gaonkar18y/microgateway-plugins#for318-unit-tests",
       "requires": {
         "async": "^1.4.2",
         "debug": "^3.1.0",
