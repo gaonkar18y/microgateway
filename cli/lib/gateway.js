@@ -276,7 +276,8 @@ Gateway.prototype.start = (options,cb) => {
         
     };
 
-    const sourceConfig = edgeconfig.replaceEnvTags(edgeconfig.load(configOptions), { disableLogs: true  });
+    configOptions.envTagsReplacerOptions = { disableLogs: true  }
+    const sourceConfig = edgeconfig.load(configOptions);
     
     if(sourceConfig.edge_config.synchronizerMode === START_SYNCHRONIZER) { 
         edgeconfig.get(configOptions, startSynchronizer);
